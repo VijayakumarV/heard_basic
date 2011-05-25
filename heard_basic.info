@@ -1,0 +1,5 @@
+core = "6.x"
+dependencies[] = "features"
+description = "Basic functionality for Heard Mentality"
+name = "heard_basic"
+package = "Features"

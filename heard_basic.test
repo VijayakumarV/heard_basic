@@ -1,0 +1,211 @@
+<?php
+// $Id$
+
+  /*
+    this class corresponds to a family of use cases (tests).
+    Complex modules will have several of these. Inside a same
+    family of tests, all tests will have the same setup.
+  */
+
+class HeardBasicTestCase extends DrupalWebTestCase {
+
+    /*
+      Info for this family of usecases (tests).
+    */
+  public static function getInfo() {
+    return array(
+      'name' => t('heard_basic functionality'),
+      'description' => t('Basic Heard Mentality Functionality for creating an issue, please see https://redmine.koumbit.net/issues/3891.'),
+      'group' => 'Heard Mentality',
+    );
+  }
+
+  protected $admin;
+  protected $moderator;
+  protected $authenticated;
+
+    /*
+      Set up commun à tous les cas à l'intérieur d'une famille
+      Common setup for all usecases within a family.
+    */
+  public function setUp() {
+      // create the drupal instance
+    parent::setUp();
+
+      // enable this module and all its dependencies. We're doing
+      // this outside of setUp() because setUp() requires us
+      // to manually reproduce the chain of dependencies, a pain.
+    $this->admin = $this->drupalCreateUser(array('administer site configuration', 'administer users'));
+    $this->drupalLogin($this->admin);
+    $this->_enableModules('heard_basic');
+
+      // create the moderator
+    $this->moderator = $this->drupalCreateUserForRole(array(4));
+      /* role number can change. see the verbose page. I put 4 here
+      because presumably 3 is taken by the first admin user */
+
+      // 1. Authenticated user ("user") created -- no specific role other than authenticated. See https://redmine.koumbit.net/projects/hm/wiki/UserRoles
+    $this->authenticated = $this->drupalCreateUserForRole(array(2));
+    $this->drupalLogout();
+    $this->drupalLogin($this->authenticated);
+  }
+
+    /*
+      Use case (test) -- recognizable as such because it starts with 'test'.
+      For every test, Simpletest will create a completely new Drupal
+      installation, will apply the common setUp and go through this code in
+      the test method.
+    */
+  public function testMainTest() {
+      // 2. User goes to the path "issues/create" (Note: we will not be defining here where this link resides, this is more of a design question. see https://github.com/alberto56/heard_basic)
+    $this->drupalGet('issues/create');
+        // note: use url aliases for this. The real path is probably node/add/issue or something like that.
+
+      // 3. User creates an issue with more than 140 characters
+    $edit = array(
+      'title' => 'whatver',
+      'body' => 'This is a test with more than 140 character: Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, totam rem aperiam. There are 192 characters here.',
+    );
+    $this->drupalPost(NULL, $edit, t('Save'));
+
+      // 4. Error pops up "Please limit your input to 140 characters".
+    $this->assertText('Please limit your input to 140 characters');
+        // note: this probably requires a hook_form_alter(), you can probably put this directly in the feature unless you want to create a dependency and a brand-new module. It is possible
+        // please see also https://redmine.koumbit.net/issues/3903
+
+      // 5 User creates an issue with 140 characters in the body and "sample issue" as a title and clicks "Create"
+    $edit = array(
+      'title' => 'sample issue',
+      'body' => 'This is a test exactly 140 characters: Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, to.',
+    );
+    $this->drupalPost(NULL, $edit, t('Save'));
+
+      // 6. The words "pending moderation" appear somewhere on the following screen
+    $this->assertText('pending moderation');
+
+      // 7. User goes to path "issues/create"
+    $this->drupalGet('issues/create');
+
+      // 8. User creates an issue with 140 characters in the body and "to delete" as a title and clicks "Create"
+    $edit = array(
+      'title' => 'to delete',
+      'body' => 'This is a test exactly 140 characters: Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium, to.',
+    );
+    $this->drupalPost(NULL, $edit, t('Save'));
+
+      // 9. The words "pending moderation" appear somewhere on the following screen
+    $this->assertText('pending moderation');
+
+      // 10. Authenticated user logs out
+    $this->drupalLogout();
+
+      // 11. Moderator user (see https://redmine.koumbit.net/projects/hm/wiki/UserRoles) logs in
+    $this->drupalLogin($this->moderator);
+
+      // 12. Moderator user visits the page (path) "admin/moderation"
+    $this->drupalGet('admin/moderation');
+
+      // 13. The words "sample issue" and "to delete" appear on screen.
+    $this->assertText('sample issue');
+    $this->assertText('to delete');
+
+      // 14. Moderator selects node/1 (sample issue) and selects publish from a drop-down menu (note to developers: use views bulk operations for this)
+      // 15. Moderator clicks the submit button (note to developers: I will call it "Save" in the simpletest, but change it according to the real label of this button.
+    $edit = array(
+      'objects[selection][1]' => TRUE,
+      '**change-this-dropdown-for-publishing**' => TRUE,
+        // see also https://redmine.koumbit.net/projects/hm/wiki/ToolsSimpletest for how to name this stuff.
+    );
+    $this->drupalPost(NULL, $edit, t('Save'));
+        // note: the $edit array should probably be changed to reflect what is being generated by views bulk operations.
+
+      // 16. The words "issue sample issue published" appear on screen.
+    $this->assertText('issue sample issue published');
+
+      // 17. Moderator revisits page "admin/moderation"
+    $this->drupalGet('admin/moderation');
+
+      // 18. The words "sample issue" do not appear on screen (it is already published so shouldn't appear on the list)
+    $this->assertNoText('sample issue');
+
+      // 19. Moderator selects node/2 (to delete) and selects delete from a drop-down menu
+      // 20. Moderator clicks "save" (or whatever that button is called)
+    $edit = array(
+      'objects[selection][2]' => TRUE,
+      '**change-this-dropdown-for-deleting**' => TRUE,
+        // see also https://redmine.koumbit.net/projects/hm/wiki/ToolsSimpletest for how to name this stuff.
+    );
+    $this->drupalPost(NULL, $edit, t('Save'));
+        // note: the $edit array should probably be changed to reflect what is being generated by views bulk operations.
+
+      // 21. The words "issue to delete deleted" appear on screen. (Wording can be different)
+    $this->assertText('issue to delete deleted');
+
+      // 22. Moderator logs out
+    $this->drupalLogout();
+
+      // 23. Anonymous user now visits the path "issues"
+    $this->drupalGet('issues');
+
+      // 24. The words "sample issue" appear on screen
+      // 25. The words "to delete" do not appear on screen.
+    $this->assertText('sample issue');
+    $this->assertNoText('to delete');
+
+      // 26. Anonymous user visits path "admin/moderation"
+    $this->drupalGet('admin/moderation');
+
+      // 27. The words "access denied" appear on screen.
+    $this->assertText('access denied');
+
+      // 28. Authenticated user logs in
+    $this->drupalLogin($this->authenticated);
+
+      // 29. Visits path "admin/moderation"
+    $this->drupalGet('admin/moderation');
+
+      // 30. The words "access denied" appear on screen.
+    $this->assertText('access denied');
+  }
+
+  /**
+   * Helper function to enable module(s).
+   */
+  public function _enableModules($modules) {
+    if(!is_array($modules)) {
+      $modules = array($modules);
+    }
+
+    foreach($modules as $module) {
+      $this->assertRaw($module);
+      $this->drupalPost('admin/build/modules/list', array('status[' . $module . ']' => true), t('Save configuration'));
+      if (strpos($this->drupalGetContent(), t('Some required modules must be enabled'))) {
+        $this->drupalPost(NULL /* we're already at the right path, the Confirm page*/, array(), t('Continue'));
+      }
+      $this->drupalGet('admin/build/modules');
+      $raw = 'value="' . $module . '"  checked="checked"';
+      $this->assertRaw($raw, t('Module @m has been activated because the raw html @r was found on the page.', array('@m' => $module, '@r' => $raw)));
+    }
+  }
+
+  protected function drupalCreateUserForRole($roles) {
+    // Create a user assigned to that role.
+    $edit = array();
+    $edit['name']   = $this->randomName();
+    $edit['mail']   = $edit['name'] . '@example.com';
+    $edit['roles']  = $roles;
+    $edit['pass']   = user_password();
+    $edit['status'] = 1;
+
+    $account = user_save('', $edit);
+
+    $this->assertTrue(!empty($account->uid), t('User created with name %name and pass %pass', array('%name' => $edit['name'], '%pass' => $edit['pass'])), t('User login'));
+    if (empty($account->uid)) {
+      return FALSE;
+    }
+
+    // Add the raw password so that we can log in as this user.
+    $account->pass_raw = $edit['pass'];
+    return $account;
+  }
+}
